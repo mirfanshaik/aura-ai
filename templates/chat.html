@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura AI</title>
+
+    <!-- ✅ Mobile support -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+</head>
+
+<body>
+
+<div class="bg"></div>
+
+<!-- 🔥 MAIN FLEX LAYOUT -->
+<div style="display:flex; height:100vh;">
+
+    <!-- 📜 SIDEBAR -->
+    <div id="sidebar" style="width:220px; background:#1e2a4a; padding:10px; overflow-y:auto;">
+        <button type="button" onclick="newChat()" style="width:100%; padding:10px; margin-bottom:10px;">
+            ➕ New Chat
+        </button>
+
+        <div id="chat-list"></div>
+    </div>
+
+    <!-- 💬 CHAT AREA -->
+    <div class="main" style="flex:1;">
+
+        <div class="center-box">
+
+            <!-- 🔵 ORB -->
+            <div class="orb"></div>
+
+            <div class="logo">AURA</div>
+
+            <div id="chat-box"></div>
+
+            <!-- 🔥 WAVE -->
+            <div id="wave" class="wave">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+
+            <!-- INPUT -->
+            <div class="input-area">
+                <input id="msg" placeholder="Ask anything...">
+
+                <button type="button" onclick="sendMessage()">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+
+                <button type="button" onclick="voice()">
+                    <i class="fas fa-microphone"></i>
+                </button>
+
+                <button type="button" onclick="startVoiceMode()">
+                    <i class="fas fa-robot"></i>
+                </button>
+
+                <button type="button" onclick="stopVoiceMode()">
+                    <i class="fas fa-stop"></i>
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+<!-- 🔥 RENAME MODAL -->
+<div id="renameModal" class="modal">
+    <div class="modal-box">
+        <h3>Rename Chat</h3>
+        <input id="renameInput" placeholder="Enter new title">
+
+        <div class="modal-actions">
+            <button type="button" onclick="confirmRename()">OK</button>
+            <button type="button" onclick="closeRename()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- 🔥 DELETE MODAL -->
+<div id="deleteModal" class="modal">
+    <div class="modal-box">
+        <h3>Delete Chat?</h3>
+        <p>This cannot be undone.</p>
+
+        <div class="modal-actions">
+            <button type="button" onclick="confirmDelete()">Delete</button>
+            <button type="button" onclick="closeDelete()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
+<script>
+    let box = document.getElementById("chat-box");
+    box.scrollTop = box.scrollHeight;
+</script>
+
+</body>
+</html>

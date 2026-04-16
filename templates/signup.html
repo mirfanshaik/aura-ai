@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aura AI Sign Up</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="container">
+    <div class="login-box">
+
+        <h1>Aura AI</h1>
+        <h2>Create account</h2>
+        <p class="subtitle">Start your journey</p>
+
+        <!-- ✅ MESSAGE SHOW -->
+        {% if msg %}
+        <p style="color:red; margin-bottom:10px;">{{ msg }}</p>
+        {% endif %}
+
+        <!-- ✅ FIXED FORM -->
+        <form action="/signup" method="POST">
+
+            <input type="text" name="username" placeholder="Username" class="input" required>
+            <input type="email" name="email" placeholder="Email address" class="input" required>
+            <input type="password" name="password" placeholder="Password" class="input" required>
+
+            <button class="btn">Sign Up</button>
+
+        </form>
+
+        <p class="footer">
+            Already have an account? <a href="/">Login</a>
+        </p>
+
+    </div>
+</div>
+
+</body>
+</html>
