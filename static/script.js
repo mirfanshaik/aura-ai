@@ -389,15 +389,10 @@ document.getElementById("msg").addEventListener("keypress", function(e) {
 
 // ================= CHAT LIST =================
 function newChat() {
-    fetch("/new_chat", { method: "POST" })
-    .then(res => res.json())
-    .then(data => {
-        current_chat_id = data.chat_id;   // 🔥 VERY IMPORTANT
-
-        document.getElementById("chat-box").innerHTML = "";
-        loadChats();
-    });
+    document.getElementById("chat-box").innerHTML = "";  // clear chat
+    current_chat_id = null;  // reset
 }
+
 function loadChats() {
     fetch("/get_chats")
     .then(res => res.json())
@@ -503,7 +498,7 @@ function loadChats() {
 }
 
 function loadChat(chatId) {
-    current_Chat_id = chatId;
+    current_chat_id = chatId;
     fetch(`/load_chat/${chatId}`)
     .then(res => res.json())
     .then(data => {
@@ -626,7 +621,7 @@ function confirmDelete() {
 
         document.getElementById("chat-box").innerHTML = "";
 
-        current_Chat_id = null;  // ✅ FIXED
+        current_chat_id = null;  // ✅ FIXED
 
         loadChats();
     })

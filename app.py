@@ -15,6 +15,16 @@ import uuid
 import subprocess
 from pdf2image import convert_from_path
 from deep_translator import GoogleTranslator
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+
+#--------------firebase------------#
+# Initialize Firebase
+cred = credentials.Certificate("firebase_key.json")
+firebase_admin.initialize_app(cred)
+
+db = firestore.client()
 
 # ---------------- AI ---------------- #
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
@@ -371,14 +381,10 @@ def process_message(msg, user_id=None):
     })
 
     if user_id:
-        conn = get_db()
-        conn.execute(
-            "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-            (current_chat_id, "user", original_msg)
-        )
-        conn.commit()
-        conn.close()
-
+        all_chats[current_chat_id].append({
+            "role": "user",
+            "content": original_msg
+    })
     # ---------------- TEMP CHAT ---------------- #
     temp_chat = all_chats[current_chat_id][-3:].copy()
     temp_chat[-1] = {"role": "user", "content": msg}
@@ -411,14 +417,10 @@ def process_message(msg, user_id=None):
         })
 
         if user_id:
-            conn = get_db()
-            conn.execute(
-                "INSERT INTO messages (chat_id, role, content) VALUES (?, ?, ?)",
-                (current_chat_id, "assistant", reply)
-            )
-            conn.commit()
-            conn.close()
-
+            all_chats[current_chat_id].append({
+                "role": "assistant",
+                "content": reply
+        })
         # ---------------- AUTO TITLE ---------------- #
         if chat_titles.get(current_chat_id) == "New Chat":
             new_title = generate_title(all_chats[current_chat_id])
@@ -432,7 +434,13 @@ def process_message(msg, user_id=None):
                 )
                 conn.commit()
                 conn.close()
-
+        db.collection("users").document(str(user_id)).collection("chats").add({
+            "name": session.get("username"),
+            "type": "chat",
+            "user_message": original_msg,   # 🔥 IMPORTANT FIX
+            "ai_reply": reply,
+            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        })
         return reply
 
     except Exception as e:
@@ -504,6 +512,13 @@ def save_memory(user_id, key, value):
     conn.commit()
     conn.close()
 
+def test_firebase():
+    db.collection("test").add({
+        "name": "Aura AI",
+        "status": "connected"
+    })
+    print("Data sent to Firebase")    
+
 
 # ---------------- ROUTES ---------------- #
 from flask import session   # ✅ make sure this import exists
@@ -522,6 +537,7 @@ def login_user():
 
     if user:
         session["user_id"] = user["id"]   # 🔥 VERY IMPORTANT
+        session["username"] = user["username"]
         return redirect("/chat")
     else:
         return render_template("login.html", msg="Invalid email or password")
@@ -539,6 +555,7 @@ def signup():
                 (username, email, password)
             )
             conn.commit()
+
             conn.close()
 
             return redirect("/")
@@ -633,50 +650,54 @@ def get_chats():
     user_id = session.get("user_id")
 
     if not user_id:
-        return jsonify([])   # 🔥 prevent crash
+        return jsonify([])
 
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT id, title FROM chats WHERE user_id=?",
-        (user_id,)
-    ).fetchall()
-    conn.close()
+    docs = db.collection("users").document(str(user_id)).collection("chats").stream()
 
-    return jsonify([{"id": r["id"], "title": r["title"]} for r in rows])
+    chats = []
+
+    for doc in docs:
+        data = doc.to_dict()
+
+        chats.append({
+            "id": doc.id,
+            "title": data.get("user_message", "Chat")[:20]
+        })
+
+    return jsonify(chats)
 
 @app.route("/load_chat/<chat_id>")
 def load_chat(chat_id):
-    global current_chat_id
-
-    user_id = session.get("user_id")   # 🔥 ADD THIS
+    user_id = session.get("user_id")
 
     if not user_id:
-        return jsonify([])   # prevent crash
+        return jsonify([])
 
-    current_chat_id = chat_id
-
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT role, content FROM messages WHERE chat_id=?",
-        (chat_id,)
-    ).fetchall()
-    conn.close()
+    # 🔥 GET DATA FROM FIREBASE
+    docs = db.collection("users").document(str(user_id)).collection("chats").stream()
 
     chat = []
-    for r in rows:
-        chat.append({"role": r["role"], "content": r["content"]})
+
+    for doc in docs:
+        data = doc.to_dict()
+
+        # USER MESSAGE
+        chat.append({
+            "role": "user",
+            "content": data.get("user_message", "")
+        })
+
+        # AI REPLY
+        chat.append({
+            "role": "assistant",
+            "content": data.get("ai_reply", "")
+        })
 
     return jsonify(chat)
 
 @app.route("/new_chat", methods=["POST"])
 def new_chat():
-    user_id = session.get("user_id")   # ✅ HERE ONLY
-
-    chat_id = create_new_chat(user_id)
-
-    session["chat_id"] = chat_id
-
-    return jsonify({"chat_id": chat_id})
+    return jsonify({"status": "new"})
 
 
 @app.route("/rename_chat/<chat_id>", methods=["POST"])
