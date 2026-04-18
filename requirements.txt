@@ -8,3 +8,4 @@ pdf2image
 deep-translator
 langdetect
 PyPDF2
+firebase-admin
