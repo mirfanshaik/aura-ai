@@ -7,6 +7,7 @@ import re
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
 import os
+import json
 import PyPDF2
 import pytesseract
 from PIL import Image
@@ -20,12 +21,13 @@ from firebase_admin import credentials, firestore
 
 
 #--------------firebase------------#
-# Initialize Firebase
-cred = credentials.Certificate("firebase_key.json")
-firebase_admin.initialize_app(cred)
+firebase_key = os.environ.get("FIREBASE_KEY")
+
+if not firebase_admin._apps:
+    cred = credentials.Certificate(json.loads(firebase_key))
+    firebase_admin.initialize_app(cred)
 
 db = firestore.client()
-
 # ---------------- AI ---------------- #
 client = Groq(api_key=os.environ.get("GROQ_API_KEY"))
 
