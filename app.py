@@ -2,7 +2,6 @@
 
 from groq import Groq
 from flask import Flask, render_template, request, redirect, session, url_for, jsonify
-import sqlite3
 import re
 from werkzeug.security import generate_password_hash, check_password_hash
 import datetime
@@ -141,58 +140,6 @@ def format_points(text):
     text = re.sub(r'[-•]\s*', r'\n- ', text)
     text = re.sub(r'\n+', '\n', text)
     return text.strip()
-
-
-# ---------------- DB ---------------- #
-def get_db():
-    conn = sqlite3.connect("database.db")
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    conn = get_db()
-
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT,
-        email TEXT UNIQUE,
-        password TEXT
-    )
-    """)
-
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS chats (
-        id TEXT PRIMARY KEY,
-        user_id INTEGER,
-        title TEXT
-    )
-    """)
-
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        chat_id TEXT,
-        role TEXT,
-        content TEXT
-    )
-    """)
-
-    # 🔥 NEW MEMORY TABLE (VERY IMPORTANT)
-    conn.execute("""
-    CREATE TABLE IF NOT EXISTS memory (
-        user_id INTEGER,
-        key TEXT,
-        value TEXT,
-        PRIMARY KEY (user_id, key)
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
-init_db()
 
 # ---------------- TITLE ---------------- #
 def generate_title(chat_messages):
@@ -524,25 +471,29 @@ def test_firebase():
 
 # ---------------- ROUTES ---------------- #
 from flask import session   # ✅ make sure this import exists
-
 @app.route("/login_user", methods=["POST"])
 def login_user():
     email = request.form.get("email")
     password = request.form.get("password")
 
-    conn = get_db()
-    user = conn.execute(
-        "SELECT * FROM users WHERE email=? AND password=?",
-        (email, password)
-    ).fetchone()
-    conn.close()
+    docs = db.collection("users").where("email", "==", email).stream()
+
+    user = None
+    for doc in docs:
+        data = doc.to_dict()
+        if data.get("password") == password:
+            user = data
+            user["id"] = doc.id
+            break
 
     if user:
-        session["user_id"] = user["id"]   # 🔥 VERY IMPORTANT
+        session["user_id"] = user["id"]
         session["username"] = user["username"]
         return redirect("/chat")
     else:
         return render_template("login.html", msg="Invalid email or password")
+    
+    
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -550,22 +501,25 @@ def signup():
         email = request.form.get("email")
         password = request.form.get("password")
 
-        conn = get_db()
         try:
-            conn.execute(
-                "INSERT INTO users (username, email, password) VALUES (?, ?, ?)",
-                (username, email, password)
-            )
-            conn.commit()
+            existing = db.collection("users").where("email", "==", email).stream()
 
-            conn.close()
+            for doc in existing:
+                return render_template("signup.html", msg="Email already exists")
+
+            db.collection("users").add({
+                "username": username,
+                "email": email,
+                "password": password
+            })
 
             return redirect("/")
-        except:
-            return render_template("signup.html", msg="Email already exists")
+
+        except Exception as e:
+            print("SIGNUP ERROR:", e)
+            return render_template("signup.html", msg="Error creating account")
 
     return render_template("signup.html")
-
 
 @app.route("/")
 def login():
@@ -627,23 +581,21 @@ def chat_api():
 
 # ---------------- CHAT MANAGEMENT ---------------- #
 def create_new_chat(user_id=None):
-    global all_chats, current_chat_id, chat_titles
+    global current_chat_id, chat_titles
 
     chat_id = str(uuid.uuid4())
-    all_chats[chat_id] = []
+    current_chat_id = chat_id
     chat_titles[chat_id] = "New Chat"
 
-    current_chat_id = chat_id
-
-    # 🔥 SAVE TO DB
     if user_id:
-        conn = get_db()
-        conn.execute(
-            "INSERT INTO chats (id, user_id, title) VALUES (?, ?, ?)",
-            (chat_id, user_id, "New Chat")
-        )
-        conn.commit()
-        conn.close()
+        db.collection("users")\
+          .document(str(user_id))\
+          .collection("chats")\
+          .document(chat_id)\
+          .set({
+              "title": "New Chat",
+              "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+          })
 
     return chat_id
 
@@ -654,7 +606,10 @@ def get_chats():
     if not user_id:
         return jsonify([])
 
-    docs = db.collection("users").document(str(user_id)).collection("chats").stream()
+    docs = db.collection("users")\
+             .document(str(user_id))\
+             .collection("chats")\
+             .stream()
 
     chats = []
 
@@ -663,7 +618,7 @@ def get_chats():
 
         chats.append({
             "id": doc.id,
-            "title": data.get("user_message", "Chat")[:20]
+            "title": data.get("title", "New Chat")
         })
 
     return jsonify(chats)
@@ -675,27 +630,31 @@ def load_chat(chat_id):
     if not user_id:
         return jsonify([])
 
-    # 🔥 GET DATA FROM FIREBASE
-    docs = db.collection("users").document(str(user_id)).collection("chats").stream()
+    docs = db.collection("users")\
+             .document(str(user_id))\
+             .collection("chats")\
+             .document(chat_id)\
+             .collection("messages")\
+             .order_by("time")\
+             .stream()
 
     chat = []
 
     for doc in docs:
         data = doc.to_dict()
 
-        # USER MESSAGE
         chat.append({
             "role": "user",
             "content": data.get("user_message", "")
         })
 
-        # AI REPLY
         chat.append({
             "role": "assistant",
             "content": data.get("ai_reply", "")
         })
 
     return jsonify(chat)
+
 
 @app.route("/new_chat", methods=["POST"])
 def new_chat():
@@ -729,36 +688,32 @@ def rename_chat(chat_id):
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
 def delete_chat(chat_id):
-    global all_chats, chat_titles, current_chat_id
+    user_id = session.get("user_id")
+
+    if not user_id:
+        return jsonify({"status": "error"})
 
     try:
-        conn = get_db()
+        chat_ref = db.collection("users")\
+                     .document(str(user_id))\
+                     .collection("chats")\
+                     .document(chat_id)
 
-        # 🔥 DELETE FROM DATABASE
-        conn.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
-        conn.execute("DELETE FROM chats WHERE id=?", (chat_id,))
+        # delete messages first
+        messages = chat_ref.collection("messages").stream()
+        for msg in messages:
+            msg.reference.delete()
 
-        conn.commit()
-        conn.close()
-
-        # 🔥 DELETE FROM RAM (VERY IMPORTANT)
-        if chat_id in all_chats:
-            del all_chats[chat_id]
-
-        if chat_id in chat_titles:
-            del chat_titles[chat_id]
-
-        # 🔥 RESET CURRENT CHAT
-        if current_chat_id == chat_id:
-            current_chat_id = None
-            session.pop("chat_id", None)
+        # delete chat
+        chat_ref.delete()
 
         return jsonify({"status": "deleted"})
 
     except Exception as e:
         print("DELETE ERROR:", e)
-        return jsonify({"error": str(e)}), 500
-    
+        return jsonify({"error": str(e)})
+
+
 def load_user_chats(user_id):
     conn = get_db()
     rows = conn.execute(
