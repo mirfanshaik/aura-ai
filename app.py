@@ -505,14 +505,26 @@ def chat():
 
 @app.route("/api/chat", methods=["POST"])
 def chat_api():
+    global current_chat_id
+
     msg = request.form.get("message")
     user_id = session.get("user_id")
+
+    # ✅ get chat_id directly from frontend
+    chat_id_from_js = request.form.get("chat_id")
+    if chat_id_from_js:
+        current_chat_id = chat_id_from_js
+        session["chat_id"] = chat_id_from_js
+        if chat_id_from_js not in all_chats:
+            all_chats[chat_id_from_js] = []
+
     reply = process_message(msg, user_id)
 
     if isinstance(reply, dict) and "action" in reply:
         return jsonify(reply)
 
     return jsonify({"reply": reply})
+
 
 @app.route("/new_chat", methods=["POST"])
 def new_chat():
@@ -528,7 +540,9 @@ def get_chats():
         return jsonify([])
 
     docs = db.collection("users").document(str(user_id))\
-             .collection("chats").stream()
+             .collection("chats")\
+             .order_by("created_at", direction=firestore.Query.DESCENDING)\
+             .stream()  # ✅ newest first
 
     chats = []
     for doc in docs:

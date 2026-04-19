@@ -38,7 +38,7 @@ function sendMessage() {
         headers: {
             "Content-Type": "application/x-www-form-urlencoded"
         },
-        body: "message=" + encodeURIComponent(msg)
+        body: "message=" + encodeURIComponent(msg) + "&chat_id=" + encodeURIComponent(current_chat_id)
     })
     .then(res => res.json())
     .then(data => {
@@ -208,7 +208,7 @@ function processJarvis(msg) {
         headers: {
             "Content-Type": "application/x-www-form-urlencoded"
         },
-        body: "message=" + encodeURIComponent(msg)
+        body: "message=" + encodeURIComponent(msg) + "&chat_id=" + encodeURIComponent(current_chat_id)
     })
     .then(res => res.json())
     .then(data => {
@@ -282,7 +282,7 @@ function sendVoiceMessage(msg) {
         headers: {
             "Content-Type": "application/x-www-form-urlencoded"
         },
-        body: "message=" + encodeURIComponent(msg)
+        body: "message=" + encodeURIComponent(msg) + "&chat_id=" + encodeURIComponent(current_chat_id)
     })
     .then(res => res.json())
     .then(data => {
@@ -389,8 +389,15 @@ document.getElementById("msg").addEventListener("keypress", function(e) {
 
 // ================= CHAT LIST =================
 function newChat() {
-    document.getElementById("chat-box").innerHTML = "";  // clear chat
-    current_chat_id = null;  // reset
+    fetch("/new_chat", {
+        method: "POST"
+    })
+    .then(res => res.json())
+    .then(data => {
+        current_chat_id = data.chat_id;
+        document.getElementById("chat-box").innerHTML = "";
+        loadChats();
+    });
 }
 
 function loadChats() {
@@ -497,6 +504,7 @@ function loadChats() {
     });
 }
 
+// ✅ FIX - add loadChats() to highlight active chat in sidebar
 function loadChat(chatId) {
     current_chat_id = chatId;
     fetch(`/load_chat/${chatId}`)
@@ -509,11 +517,11 @@ function loadChat(chatId) {
             let div = document.createElement("div");
             div.className = "message " + (msg.role === "user" ? "user" : "bot");
             div.innerText = msg.content;
-
             chatBox.appendChild(div);
         });
 
         smoothScrollSmart();
+        loadChats();  // ✅ ADD THIS - highlights active chat
     });
 }
 
@@ -610,23 +618,23 @@ function deleteChat(chatId) {
 function confirmDelete() {
     if (!deleteId) return;
 
-    fetch(`/delete_chat/${deleteId}`, {
-        method: "POST"
-    })
+    fetch(`/delete_chat/${deleteId}`, { method: "POST" })
     .then(res => res.json())
     .then(data => {
-        console.log("DELETE:", data);
-
         closeDelete();
-
         document.getElementById("chat-box").innerHTML = "";
 
-        current_chat_id = null;  // ✅ FIXED
-
-        loadChats();
+        // ✅ auto create new chat after delete
+        fetch("/new_chat", { method: "POST" })
+        .then(res => res.json())
+        .then(data => {
+            current_chat_id = data.chat_id;
+            loadChats();
+        });
     })
     .catch(err => console.error("DELETE ERROR:", err));
 }
+
 function closeRename() {
     document.getElementById("renameModal").style.display = "none";
 }
@@ -642,27 +650,40 @@ function closeDelete() {
 
 window.onload = function () {
     document.getElementById("msg").focus();
+
     // 🔥 HIDE WAVE ON START
     let w = document.getElementById("wave");
     if (w) w.style.display = "none";
 
-
     fetch("/get_chats")
     .then(res => res.json())
     .then(chats => {
+
         if (chats.length > 0) {
             let firstChat = chats[0];
-
             current_chat_id = firstChat.id;
 
-            loadChat(firstChat.id);  // load messages
+            fetch(`/load_chat/${firstChat.id}`)
+            .then(res => res.json())
+            .then(data => {
+                let chatBox = document.getElementById("chat-box");
+                chatBox.innerHTML = "";
+
+                data.forEach(msg => {
+                    let div = document.createElement("div");
+                    div.className = "message " + (msg.role === "user" ? "user" : "bot");
+                    div.innerText = msg.content;
+                    chatBox.appendChild(div);
+                });
+
+                smoothScrollSmart();
+            });
         }
 
-        loadChats();   // sidebar
-        
+        loadChats();  // ✅ only once
+
     });
 };
-
 
 function deleteMemory(key) {
     fetch(`/delete_memory/${key}`, {
@@ -673,3 +694,20 @@ function deleteMemory(key) {
     });
 }
 
+function loadMemory() {
+    fetch("/get_memory")
+    .then(res => res.json())
+    .then(memory => {
+        let box = document.getElementById("memory-box");
+        if (!box) return;
+        box.innerHTML = "";
+
+        Object.entries(memory).forEach(([key, value]) => {
+            box.innerHTML += `
+                <div>${key}: ${value} 
+                    <button onclick="deleteMemory('${key}')">❌</button>
+                </div>
+            `;
+        });
+    });
+}
