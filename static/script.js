@@ -1,3 +1,6 @@
+// ================= CROSS BROWSER SUPPORT =================
+const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
 // ================= LOAD VOICES =================
 speechSynthesis.onvoiceschanged = function () {
     console.log(speechSynthesis.getVoices());
@@ -19,11 +22,9 @@ function sendMessage() {
 
     let chatBox = document.getElementById("chat-box");
 
-    // ✅ USER MESSAGE
     chatBox.innerHTML += `<div class="message user">${msg}</div>`;
     input.value = "";
 
-    // ✅ SHOW TYPING DOTS
     chatBox.innerHTML += `
         <div class="message bot typing" id="typing">
             <span></span><span></span><span></span>
@@ -32,7 +33,6 @@ function sendMessage() {
 
     smoothScrollSmart();
 
-    // ✅ API CALL
     fetch("/api/chat", {
         method: "POST",
         headers: {
@@ -43,7 +43,6 @@ function sendMessage() {
     .then(res => res.json())
     .then(data => {
 
-        // ✅ REMOVE TYPING
         let typing = document.getElementById("typing");
         if (typing) typing.remove();
 
@@ -57,19 +56,17 @@ function sendMessage() {
 
         let reply = data.reply;
 
-        // ✅ BOT MESSAGE (STREAMING)
         let botDiv = document.createElement("div");
         botDiv.className = "message bot";
         chatBox.appendChild(botDiv);
 
         streamText(botDiv, reply);
 
-       // ✅ scroll after stream finishes
-       setTimeout(() => {
-        chatBox.scrollTop = chatBox.scrollHeight;
-        smoothScrollSmart();
-       }, 100);
-        // 🔥 wait for Firebase title to save then refresh
+        setTimeout(() => {
+            chatBox.scrollTop = chatBox.scrollHeight;
+            smoothScrollSmart();
+        }, 100);
+
         setTimeout(() => {
             loadChats();
         }, 3000);
@@ -84,6 +81,7 @@ function sendMessage() {
         chatBox.innerHTML += `<div class="message bot">Error occurred</div>`;
     });
 }
+
 // ================= TYPE EFFECT =================
 function typeText(element, text) {
     let i = 0;
@@ -102,7 +100,6 @@ function typeText(element, text) {
         } else {
             cursor.remove();
 
-            // ✅ ADD BUTTONS HERE
             element.innerHTML += `
                 <div class="msg-actions">
                     <button onclick="readText(this)">🔊 Read</button>
@@ -114,6 +111,7 @@ function typeText(element, text) {
 
     typing();
 }
+
 // ================= VOICE MODE =================
 function startVoiceMode() {
     if (isVoiceMode) return;
@@ -121,10 +119,7 @@ function startVoiceMode() {
     isVoiceMode = true;
     speakText("Aura voice mode activated");
 
-    // 🔥 WAIT until speaking ends
-    setTimeout(() => {
-
-    }, 1500);
+    setTimeout(() => {}, 1500);
 }
 
 function stopVoiceMode() {
@@ -138,7 +133,12 @@ function stopVoiceMode() {
 function voiceLoop() {
     if (!isVoiceMode || isSpeaking) return;
 
-    let rec = new webkitSpeechRecognition();
+    if (!SpeechRecognition) {
+        alert("Voice not supported! Use Chrome.");
+        return;
+    }
+
+    let rec = new SpeechRecognition();
     currentRec = rec;
 
     rec.lang = "en-IN";
@@ -152,7 +152,6 @@ function voiceLoop() {
         let msg = e.results[0][0].transcript.toLowerCase();
         console.log("User:", msg);
 
-        // 🛑 STOP COMMAND
         if (
             msg.includes("stop") ||
             msg.includes("top") ||
@@ -174,12 +173,8 @@ function voiceLoop() {
         processJarvis(msg);
     };
 
-    // 🔥 FIXED ERROR HANDLER
     rec.onerror = function(e) {
-        
-
-        // ❌ ignore aborted (very important)
-        if (e.error === "aborted"){
+        if (e.error === "aborted") {
             ignoreAbort = true;
             return;
         }
@@ -198,6 +193,7 @@ function voiceLoop() {
             setTimeout(() => voiceLoop(), 800);
         }
     };
+
     try {
         rec.start();
     } catch (err) {
@@ -217,7 +213,6 @@ function processJarvis(msg) {
     .then(res => res.json())
     .then(data => {
 
-        // 🔥 HANDLE OPEN COMMAND
         if (data.action === "open_url") {
             window.open(data.url, "_blank");
             if (data.reply) {
@@ -226,13 +221,18 @@ function processJarvis(msg) {
             return;
         }
 
-        // 🔥 NORMAL AI RESPONSE
         speakText(data.reply);
     });
 }
+
 // ================= SINGLE MIC =================
 function voice() {
-    let rec = new webkitSpeechRecognition();
+    if (!SpeechRecognition) {
+        alert("Voice not supported! Use Chrome.");
+        return;
+    }
+
+    let rec = new SpeechRecognition();
 
     rec.lang = "en-IN";
     rec.interimResults = false;
@@ -240,13 +240,12 @@ function voice() {
 
     showWave();
 
-    // ✅ speak first, then start mic after delay
     speakText("I'm listening");
 
     setTimeout(() => {
         console.log("🎤 Listening...");
-        rec.start();  // ✅ start AFTER speaking finishes
-    }, 2000);  // wait 2 seconds
+        rec.start();
+    }, 2000);
 
     rec.onresult = function(e) {
         let msg = e.results[0][0].transcript.toLowerCase();
@@ -322,7 +321,6 @@ function speakText(text) {
     speechSynthesis.cancel();
     isSpeaking = true;
 
-    // 🔥 VERY IMPORTANT (this was missing in your new code)
     if (currentRec) currentRec.stop();
 
     let speech = new SpeechSynthesisUtterance(text);
@@ -331,8 +329,6 @@ function speakText(text) {
     speech.onend = function () {
         isSpeaking = false;
 
-
-        // 🔥 restart listening after speaking
         if (isVoiceMode) {
             setTimeout(() => voiceLoop(), 500);
         }
@@ -340,7 +336,6 @@ function speakText(text) {
 
     speechSynthesis.speak(speech);
 }
-
 
 // ================= HELPERS =================
 function addMessage(text, sender) {
@@ -383,6 +378,7 @@ function hideWave() {
     if (!w) return;
     w.style.display = "none";
 }
+
 // ================= ENTER KEY =================
 document.getElementById("msg").addEventListener("keypress", function(e) {
     if (e.key === "Enter") {
@@ -392,9 +388,7 @@ document.getElementById("msg").addEventListener("keypress", function(e) {
 
 // ================= CHAT LIST =================
 function newChat() {
-    fetch("/new_chat", {
-        method: "POST"
-    })
+    fetch("/new_chat", { method: "POST" })
     .then(res => res.json())
     .then(data => {
         current_chat_id = data.chat_id;
@@ -418,96 +412,85 @@ function loadChats() {
             row.style.alignItems = "center";
             row.style.padding = "4px 8px";
             row.style.borderRadius = "6px";
-            row.style.fontSize = "14px"; 
-            row.style.display = "flex";
+            row.style.fontSize = "14px";
             row.style.alignItems = "center";
             row.style.justifyContent = "space-between";
-            
 
-           // active highlight
-           if (chat.id === current_chat_id) {
-            row.style.background = "#3f5aa5";
+            if (chat.id === current_chat_id) {
+                row.style.background = "#3f5aa5";
             } else {
                 row.style.background = "#2d3f6b";
             }
-            
 
-             // LEFT: title button
-             let btn = document.createElement("button");
-             btn.innerText = chat.title;
-             btn.style.flex = "1";
-             btn.style.background = "transparent";
-             btn.style.border = "none";
-             btn.style.color = "white";
-             btn.style.textAlign = "left";
-             btn.style.cursor = "pointer";
-             btn.style.fontSize = "13px";
-             btn.style.padding = "4px 6px";
-             btn.style.whiteSpace = "nowrap";      // no line break
-             btn.style.overflow = "hidden";        // hide extra text
-             btn.style.flex = "1";
-             btn.style.minWidth = "0";   // 🔥 VERY IMPORTANT
-
-            btn.style.textOverflow = "ellipsis";  // show ...
-            btn.style.maxWidth = "120px";         // 🔥 control width
+            let btn = document.createElement("button");
+            btn.innerText = chat.title;
+            btn.style.flex = "1";
+            btn.style.background = "transparent";
+            btn.style.border = "none";
+            btn.style.color = "white";
+            btn.style.textAlign = "left";
+            btn.style.cursor = "pointer";
+            btn.style.fontSize = "13px";
+            btn.style.padding = "4px 6px";
+            btn.style.whiteSpace = "nowrap";
+            btn.style.overflow = "hidden";
+            btn.style.minWidth = "0";
+            btn.style.textOverflow = "ellipsis";
+            btn.style.maxWidth = "120px";
 
             btn.onclick = () => {
                 current_chat_id = chat.id;
-                 loadChat(chat.id);
-                 loadChats();
+                loadChat(chat.id);
+                loadChats();
             };
 
-            // RIGHT: icons container
             let actions = document.createElement("div");
             actions.style.display = "flex";
             actions.style.gap = "5px";
-            actions.style.flexShrink = "0";  // 🔥 prevents icons from moving
+            actions.style.flexShrink = "0";
 
-           // ✏️ rename
-           let editBtn = document.createElement("button");
-           editBtn.innerHTML = '<i class="fas fa-pen"></i>';
-           editBtn.onclick = () => renameChat(chat.id);
+            let editBtn = document.createElement("button");
+            editBtn.innerHTML = '<i class="fas fa-pen"></i>';
+            editBtn.onclick = () => renameChat(chat.id);
 
-           // 🗑 delete
-           let deleteBtn = document.createElement("button");
-           deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+            let deleteBtn = document.createElement("button");
+            deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
 
-           deleteBtn.onclick = (e) => {
-            e.stopPropagation();   // 🔥 prevents opening chat
-            deleteChat(chat.id);
-           };
-
-           [editBtn, deleteBtn].forEach(btn => {
-            btn.onmouseover = () => {
-                btn.style.background = "#5a7cff";
-                btn.style.transform = "scale(1.1)";
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                deleteChat(chat.id);
             };
 
-            btn.onmouseout = () => {
+            [editBtn, deleteBtn].forEach(btn => {
+                btn.onmouseover = () => {
+                    btn.style.background = "#5a7cff";
+                    btn.style.transform = "scale(1.1)";
+                };
+
+                btn.onmouseout = () => {
+                    btn.style.background = "rgba(255,255,255,0.1)";
+                    btn.style.transform = "scale(1)";
+                };
                 btn.style.background = "rgba(255,255,255,0.1)";
-                btn.style.transform = "scale(1)";
-            };
-            btn.style.background = "rgba(255,255,255,0.1)";
-            btn.style.border = "none";
-            btn.style.borderRadius = "8px";
-            btn.style.padding = "6px 8px";
-            btn.style.cursor = "pointer";
-            btn.style.transition = "0.2s";
-            btn.style.backdropFilter = "blur(5px)";
-           });
-           // add buttons
-           actions.appendChild(editBtn);
-           actions.appendChild(deleteBtn);
+                btn.style.border = "none";
+                btn.style.borderRadius = "8px";
+                btn.style.padding = "6px 8px";
+                btn.style.cursor = "pointer";
+                btn.style.transition = "0.2s";
+                btn.style.backdropFilter = "blur(5px)";
+            });
 
-          row.appendChild(btn);
-          row.appendChild(actions);
+            actions.appendChild(editBtn);
+            actions.appendChild(deleteBtn);
 
-          list.appendChild(row);
+            row.appendChild(btn);
+            row.appendChild(actions);
+
+            list.appendChild(row);
         });
     });
 }
 
-// ✅ FIX - add loadChats() to highlight active chat in sidebar
 function loadChat(chatId) {
     current_chat_id = chatId;
     fetch(`/load_chat/${chatId}`)
@@ -524,15 +507,17 @@ function loadChat(chatId) {
         });
 
         smoothScrollSmart();
-        loadChats();  // ✅ ADD THIS - highlights active chat
+        loadChats();
     });
 }
 
-// ================= INIT =================
+// ================= SCROLL =================
 function smoothScrollSmart() {
     let box = document.getElementById("chat-box");
     box.scrollTop = box.scrollHeight;
 }
+
+// ================= STREAM TEXT =================
 function streamText(element, text) {
     let words = text.split(" ");
     let i = 0;
@@ -541,18 +526,12 @@ function streamText(element, text) {
 
     function stream() {
         if (i < words.length) {
-
             element.innerHTML = element.innerHTML.replace('<span class="cursor">|</span>', '');
             element.innerHTML += words[i] + " <span class='cursor'>|</span>";
-
             i++;
             setTimeout(stream, 50);
-
         } else {
-
             element.innerHTML = element.innerHTML.replace('<span class="cursor">|</span>', '');
-
-            // 🔥 THIS IS WHAT YOU ARE MISSING
             element.innerHTML += `
                 <div class="msg-actions">
                     <button onclick="readText(this)">🔊 Read</button>
@@ -564,46 +543,51 @@ function streamText(element, text) {
 
     stream();
 }
+
 function readText(btn) {
     let text = btn.parentElement.parentElement.innerText;
-    speakText(text);   // you already have this
+    speakText(text);
 }
 
 function explainText(btn) {
     let text = btn.parentElement.parentElement.innerText;
     sendVoiceMessage("Explain this in detail: " + text);
 }
+
+// ================= RENAME =================
 let renameId = null;
 
 function renameChat(chatId) {
     renameId = chatId;
-
-    document.getElementById("renameInput").value = ""; // clear old
+    document.getElementById("renameInput").value = "";
     document.getElementById("renameModal").style.display = "flex";
 }
 
 function confirmRename() {
     let newTitle = document.getElementById("renameInput").value;
-
     if (!newTitle) return;
 
     fetch(`/rename_chat/${renameId}`, {
         method: "POST",
-        headers: {
-            "Content-Type": "application/x-www-form-urlencoded"
-        },
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: `title=${encodeURIComponent(newTitle)}`
     })
     .then(res => res.json())
     .then(() => {
         closeRename();
-        loadChats(); // refresh sidebar
+        loadChats();
     });
 }
 
+function closeRename() {
+    document.getElementById("renameModal").style.display = "none";
+}
+
+// ================= DELETE =================
+let deleteId = null;
+
 function deleteChat(chatId) {
     deleteId = chatId;
-
     let modal = document.getElementById("deleteModal");
     if (modal) modal.style.display = "flex";
 }
@@ -612,29 +596,24 @@ function confirmDelete() {
     if (!deleteId) return;
 
     let chatToDelete = deleteId;
-    deleteId = null;  // ✅ clear immediately
+    deleteId = null;
 
     fetch(`/delete_chat/${chatToDelete}`, { method: "POST" })
     .then(res => res.json())
     .then(() => {
         closeDelete();
 
-        // ✅ always clear if deleted chat was active
         if (chatToDelete === current_chat_id || current_chat_id === null) {
             current_chat_id = null;
             document.getElementById("chat-box").innerHTML = "";
         }
 
-        // ✅ check what chats are left
         fetch("/get_chats")
         .then(res => res.json())
         .then(chats => {
-
-            // filter out deleted one just in case
             let remaining = chats.filter(c => c.id !== chatToDelete);
 
             if (remaining.length === 0) {
-                // ✅ no chats left → create one
                 fetch("/new_chat", { method: "POST" })
                 .then(res => res.json())
                 .then(newData => {
@@ -642,7 +621,6 @@ function confirmDelete() {
                     loadChats();
                 });
             } else {
-                // ✅ chats exist → load first one
                 current_chat_id = remaining[0].id;
                 loadChat(remaining[0].id);
             }
@@ -651,21 +629,20 @@ function confirmDelete() {
     .catch(err => console.error("DELETE ERROR:", err));
 }
 
-function closeRename() {
-    document.getElementById("renameModal").style.display = "none";
-}
-
-let deleteId = null;
-
-
 function closeDelete() {
-    deleteId = null; // ✅ reset
+    deleteId = null;
     document.getElementById("deleteModal").style.display = "none";
 }
 
-
+// ================= INIT =================
 window.onload = function () {
     document.getElementById("msg").focus();
+
+    // ✅ warn non-chrome users
+    let isChrome = /Chrome/.test(navigator.userAgent) && /Google Inc/.test(navigator.vendor);
+    if (!isChrome) {
+        alert("⚠️ For best experience use Google Chrome. Voice may not work in other browsers.");
+    }
 
     // 🔥 HIDE WAVE ON START
     let w = document.getElementById("wave");
@@ -674,7 +651,6 @@ window.onload = function () {
     fetch("/get_chats")
     .then(res => res.json())
     .then(chats => {
-
         if (chats.length > 0) {
             let firstChat = chats[0];
             current_chat_id = firstChat.id;
@@ -696,15 +672,13 @@ window.onload = function () {
             });
         }
 
-        loadChats();  // ✅ only once
-
+        loadChats();
     });
 };
 
+// ================= MEMORY =================
 function deleteMemory(key) {
-    fetch(`/delete_memory/${key}`, {
-        method: "POST"
-    })
+    fetch(`/delete_memory/${key}`, { method: "POST" })
     .then(() => {
         loadMemory();
     });
