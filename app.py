@@ -422,23 +422,22 @@ def login():
 
 @app.route("/login_user", methods=["POST"])
 def login_user():
-    email = request.form.get("email")
-    password = request.form.get("password")
+    email = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "").strip()
 
     users = db.collection("users").where("email", "==", email).stream()
 
     for user in users:
         data = user.to_dict()
 
-        # 🔥 THIS IS THE MAIN CHECK
-        if data["password"] == password:
+        stored_password = str(data.get("password", "")).strip()
+
+        if stored_password == password:
             session["user_id"] = user.id
             session["username"] = data["email"]
-
             return redirect("/chat")
 
     return render_template("login.html", msg="Invalid email or password")
-
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -456,8 +455,8 @@ def signup():
             # create new user
             db.collection("users").add({
                 "username": username,
-                "email": email,
-                "password": password   # (we'll secure later)
+                "email": email.strip().lower(),  # ✅ lowercase
+                "password": password.strip()     # ✅ trim spaces
             })
 
             return redirect("/")
