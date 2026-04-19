@@ -314,7 +314,7 @@ function sendVoiceMessage(msg) {
 
         chatBox.scrollTop = chatBox.scrollHeight;
     });
-
+}
 // ================= ASK MORE =================
 function askMore() {
     sendVoiceMessage("Explain in detail");
