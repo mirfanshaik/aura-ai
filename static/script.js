@@ -618,25 +618,41 @@ function deleteChat(chatId) {
 function confirmDelete() {
     if (!deleteId) return;
 
-    let chatToDelete = deleteId;  // ✅ save before reset
+    let chatToDelete = deleteId;
+    deleteId = null;  // ✅ clear immediately
 
     fetch(`/delete_chat/${chatToDelete}`, { method: "POST" })
     .then(res => res.json())
-    .then(data => {
+    .then(() => {
         closeDelete();
 
-        // ✅ remove from all_chats memory
-        if (chatToDelete === current_chat_id) {
+        // ✅ always clear if deleted chat was active
+        if (chatToDelete === current_chat_id || current_chat_id === null) {
             current_chat_id = null;
             document.getElementById("chat-box").innerHTML = "";
         }
 
-        // ✅ create new chat then refresh sidebar
-        fetch("/new_chat", { method: "POST" })
+        // ✅ check what chats are left
+        fetch("/get_chats")
         .then(res => res.json())
-        .then(newData => {
-            current_chat_id = newData.chat_id;
-            loadChats();  // ✅ sidebar refreshes with deleted one gone
+        .then(chats => {
+
+            // filter out deleted one just in case
+            let remaining = chats.filter(c => c.id !== chatToDelete);
+
+            if (remaining.length === 0) {
+                // ✅ no chats left → create one
+                fetch("/new_chat", { method: "POST" })
+                .then(res => res.json())
+                .then(newData => {
+                    current_chat_id = newData.chat_id;
+                    loadChats();
+                });
+            } else {
+                // ✅ chats exist → load first one
+                current_chat_id = remaining[0].id;
+                loadChat(remaining[0].id);
+            }
         });
     })
     .catch(err => console.error("DELETE ERROR:", err));
