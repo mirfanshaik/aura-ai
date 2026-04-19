@@ -8,22 +8,26 @@ import datetime
 import os
 import json
 import PyPDF2
-import pytesseract
 from PIL import Image
-import webbrowser
 import uuid
-import subprocess
 from pdf2image import convert_from_path
 from deep_translator import GoogleTranslator
 import firebase_admin
 from firebase_admin import credentials, firestore
+import base64
+import random
 
-
-#--------------firebase------------#
+# ---------------- FIREBASE ---------------- #
 firebase_key = os.environ.get("FIREBASE_KEY")
 
 if not firebase_admin._apps:
-    cred = credentials.Certificate(json.loads(firebase_key))
+    if firebase_key:
+        # 🔥 Render / Production
+        cred = credentials.Certificate(json.loads(firebase_key))
+    else:
+        # 🔥 Local (VS Code)
+        cred = credentials.Certificate("firebase_key.json")
+
     firebase_admin.initialize_app(cred)
 
 db = firestore.client()
@@ -48,30 +52,20 @@ app.secret_key = "aura_super_secret_123"
 UPLOAD_FOLDER = "uploads"
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# OCR path
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# Allowed file types
 ALLOWED_EXTENSIONS = {"pdf", "png", "jpg", "jpeg"}
 
 def allowed_file(filename):
-    """Check valid file type"""
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
-
-
 def translate_text(text, dest):
-    """Translate text"""
     try:
         return GoogleTranslator(source='auto', target=dest).translate(text)
     except:
         return text
 
-
 # ---------------- READERS ---------------- #
 def read_pdf(path):
-    """Read normal PDF"""
     text = ""
     with open(path, "rb") as f:
         reader = PyPDF2.PdfReader(f)
@@ -79,32 +73,21 @@ def read_pdf(path):
             text += page.extract_text() or ""
     return text
 
-
 def read_image(path):
-    """OCR image"""
     img = Image.open(path).convert("L")
     img = img.point(lambda x: 0 if x < 140 else 255)
-
     return pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
 
-
 def read_scanned_pdf(path):
-    """OCR scanned PDF"""
     images = convert_from_path(path)
     text = ""
-
     for img in images:
         img = img.convert("L")
         text += pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-
     return text
 
-
 # ---------------- IMAGE DESCRIPTION ---------------- #
-import base64
-
 def describe_image(path):
-    """AI image description"""
     try:
         with open(path, "rb") as img_file:
             base64_image = base64.b64encode(img_file.read()).decode("utf-8")
@@ -119,21 +102,17 @@ def describe_image(path):
                 ]
             }]
         )
-
         return response.choices[0].message.content
 
     except Exception as e:
         print("VISION ERROR:", e)
         return "Unable to analyze image."
 
-
 # ---------------- CLEAN + FORMAT ---------------- #
 def clean_text(text):
     return text.replace("**", "")
 
-
 def format_points(text):
-    """Format bullet points"""
     text = text.replace("**", "")
     text = re.sub(r'Here are.*?:', '', text, flags=re.IGNORECASE)
     text = re.sub(r'(\d+\.)\s*', r'\n\1 ', text)
@@ -145,7 +124,6 @@ def format_points(text):
 def generate_title(chat_messages):
     try:
         first_msg = ""
-
         for msg in chat_messages:
             if msg["role"] == "user":
                 first_msg = msg["content"]
@@ -161,13 +139,91 @@ def generate_title(chat_messages):
                 {"role": "user", "content": first_msg}
             ]
         )
-
-        title = response.choices[0].message.content.strip()
-
-        return title[:30]
+        return response.choices[0].message.content.strip()[:30]
 
     except:
         return first_msg[:20] if first_msg else "New Chat"
+
+# ---------------- MEMORY (FIREBASE) ---------------- #
+def extract_memory(text):
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Extract ONLY important personal user info.\n"
+                        "Return STRICTLY: key:value\n\n"
+                        "Examples:\n"
+                        "my name is irfan → name:irfan\n"
+                        "call me rahul → name:rahul\n"
+                        "my favourite colour is red → color:red\n"
+                        "i love blue → color:blue\n"
+                        "i am from india → place:india\n"
+                        "i live in chennai → place:chennai\n\n"
+                        "If user changes info, return new value.\n"
+                        "If nothing important, return: NONE"
+                    )
+                },
+                {"role": "user", "content": text}
+            ]
+        )
+
+        result = response.choices[0].message.content.strip().lower()
+        print("MEMORY DEBUG:", result)
+
+        if result == "none":
+            return None
+
+        if ":" in result:
+            key, value = result.split(":", 1)
+            return key.strip(), value.strip()
+
+    except Exception as e:
+        print("MEMORY ERROR:", e)
+        return None
+
+def load_memory(user_id):
+    try:
+        docs = db.collection("users").document(str(user_id))\
+                 .collection("memory").stream()
+        memory = {}
+        for doc in docs:
+            data = doc.to_dict()
+            memory[doc.id] = data.get("value", "")
+        return memory
+    except Exception as e:
+        print("LOAD MEMORY ERROR:", e)
+        return {}
+
+def save_memory(user_id, key, value):
+    try:
+        db.collection("users").document(str(user_id))\
+          .collection("memory").document(key)\
+          .set({"value": value})
+    except Exception as e:
+        print("SAVE MEMORY ERROR:", e)
+
+# ---------------- CHAT MANAGEMENT ---------------- #
+def create_new_chat(user_id=None):
+    global current_chat_id, chat_titles, all_chats
+
+    chat_id = str(uuid.uuid4())
+    current_chat_id = chat_id
+    chat_titles[chat_id] = "New Chat"
+    all_chats[chat_id] = []
+
+    if user_id:
+        db.collection("users").document(str(user_id))\
+          .collection("chats").document(chat_id)\
+          .set({
+              "title": "New Chat",
+              "created_at": firestore.SERVER_TIMESTAMP
+          })
+
+    return chat_id
+
 # ---------------- AI ENGINE ---------------- #
 def process_message(msg, user_id=None):
     global all_chats, current_chat_id, chat_titles
@@ -180,9 +236,7 @@ def process_message(msg, user_id=None):
 
     msg_lower = msg.lower().strip()
 
-    import random
-
-    # -------- JARVIS GREETING --------
+    # -------- GREETING --------
     if msg_lower in ["hi", "hello", "hey"]:
         responses = [
             "Hello boss 😎",
@@ -192,13 +246,12 @@ def process_message(msg, user_id=None):
         ]
         return random.choice(responses)
 
-    # -------- WEATHER FEATURE (FINAL FIX) --------
+    # -------- WEATHER --------
     if "weather" in msg_lower:
         import requests
         from bs4 import BeautifulSoup
 
-        city = re.sub(r"(what is|wt is|how is|weather|now|in)", "", msg_lower)
-        city = city.strip()
+        city = re.sub(r"(what is|wt is|how is|weather|now|in)", "", msg_lower).strip()
 
         if city == "":
             return "Tell me the city name boss 🌍"
@@ -206,7 +259,6 @@ def process_message(msg, user_id=None):
         try:
             url = f"https://www.google.com/search?q=weather+{city}"
             headers = {"User-Agent": "Mozilla/5.0"}
-
             res = requests.get(url, headers=headers)
             soup = BeautifulSoup(res.text, "html.parser")
 
@@ -214,9 +266,7 @@ def process_message(msg, user_id=None):
             desc_tag = soup.find("span", {"id": "wob_dc"})
 
             if temp_tag and desc_tag:
-                temp = temp_tag.text
-                desc = desc_tag.text
-                return f"🌦️ {city.title()}: {temp}°C, {desc}"
+                return f"🌦️ {city.title()}: {temp_tag.text}°C, {desc_tag.text}"
             else:
                 return f"Sorry boss 😓 Weather not found for {city.title()}"
 
@@ -255,12 +305,11 @@ def process_message(msg, user_id=None):
     if "date" in msg_lower:
         return str(datetime.date.today())
 
-    # ---------------- OPEN COMMAND ---------------- #
+    # ---------------- OPEN ---------------- #
     if "open" in msg_lower:
         try:
             site = msg_lower.split("open", 1)[1].strip()
-            site = site.replace("the ", "").replace("please ", "")
-            site = site.split()[0]
+            site = site.replace("the ", "").replace("please ", "").split()[0]
 
             if "whatsapp" in site:
                 url = "https://web.whatsapp.com"
@@ -271,11 +320,7 @@ def process_message(msg, user_id=None):
             else:
                 url = f"https://{site}.com"
 
-            return {
-                "action": "open_url",
-                "url": url,
-                "reply": f"Opening {site}..."
-            }
+            return {"action": "open_url", "url": url, "reply": f"Opening {site}..."}
 
         except Exception as e:
             print("OPEN ERROR:", e)
@@ -283,68 +328,45 @@ def process_message(msg, user_id=None):
     # ---------------- SEARCH + READ ---------------- #
     if "search" in msg_lower and "read" in msg_lower:
         query = msg_lower.replace("search", "").replace("read", "").strip()
-
         if query:
             url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            return {
-                "action": "open_url",
-                "url": url,
-                "reply": f"Here is what I found about {query}"
-            }
+            return {"action": "open_url", "url": url, "reply": f"Here is what I found about {query}"}
 
     # ---------------- SEARCH ---------------- #
     if msg_lower.startswith("search"):
         query = msg_lower.replace("search", "").strip()
-
         if query:
             url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            return {
-                "action": "open_url",
-                "url": url,
-                "reply": f"Searching for {query}..."
-            }
+            return {"action": "open_url", "url": url, "reply": f"Searching for {query}..."}
 
     # ---------------- PLAY ---------------- #
     if msg_lower.startswith("play"):
         query = msg_lower.replace("play", "").strip()
-
         if query:
             url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
-            return {
-                "action": "open_url",
-                "url": url,
-                "reply": f"Playing {query}..."
-            }
+            return {"action": "open_url", "url": url, "reply": f"Playing {query}..."}
 
     # ---------------- STYLE ---------------- #
     use_points = any(word in msg_lower for word in [
         "points", "list", "steps", "explain", "advantages", "features", "summarize"
     ])
-
     msg += "\n\nGive only clean numbered points." if use_points else "\n\nGive normal answer."
 
-    # ---------------- SAVE USER ---------------- #
-    all_chats[current_chat_id].append({
-        "role": "user",
-        "content": original_msg
-    })
+    # ---------------- SAVE USER MESSAGE ---------------- #
+    all_chats[current_chat_id].append({"role": "user", "content": original_msg})
 
-    if user_id:
-        all_chats[current_chat_id].append({
-            "role": "user",
-            "content": original_msg
-    })
     # ---------------- TEMP CHAT ---------------- #
     temp_chat = all_chats[current_chat_id][-3:].copy()
     temp_chat[-1] = {"role": "user", "content": msg}
 
-    # ---------------- MEMORY TO AI ---------------- #
+    # ---------------- MEMORY TEXT ---------------- #
     memory_text = ""
     for i, (k, v) in enumerate(memory.items()):
         if i >= 3:
             break
         memory_text += f"{k} = {v}\n"
 
+    # ---------------- AI CALL ---------------- #
     try:
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
@@ -359,141 +381,66 @@ def process_message(msg, user_id=None):
         if use_points:
             reply = format_points(reply)
 
-        # ---------------- SAVE AI ---------------- #
-        all_chats[current_chat_id].append({
-            "role": "assistant",
-            "content": reply
-        })
+        # ---------------- SAVE AI REPLY ---------------- #
+        all_chats[current_chat_id].append({"role": "assistant", "content": reply})
 
-        if user_id:
-            all_chats[current_chat_id].append({
-                "role": "assistant",
-                "content": reply
-        })
         # ---------------- AUTO TITLE ---------------- #
         if chat_titles.get(current_chat_id) == "New Chat":
             new_title = generate_title(all_chats[current_chat_id])
             chat_titles[current_chat_id] = new_title
 
             if user_id:
-                conn = get_db()
-                conn.execute(
-                    "UPDATE chats SET title=? WHERE id=?",
-                    (new_title, current_chat_id)
-                )
-                conn.commit()
-                conn.close()
-        db.collection("users").document(str(user_id)).collection("chats").add({
-            "name": session.get("username"),
-            "type": "chat",
-            "user_message": original_msg,   # 🔥 IMPORTANT FIX
-            "ai_reply": reply,
-            "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        })
+                db.collection("users").document(str(user_id))\
+                  .collection("chats").document(current_chat_id)\
+                  .set({"title": new_title}, merge=True)
+
+        # ---------------- SAVE TO FIREBASE ---------------- #
+        if user_id:
+            chat_ref = db.collection("users").document(str(user_id))\
+                         .collection("chats").document(current_chat_id)
+
+            chat_ref.set({
+                "title": chat_titles.get(current_chat_id, "New Chat"),
+                "created_at": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+
+            chat_ref.collection("messages").add({
+                "user_message": original_msg,
+                "ai_reply": reply,
+                "time": firestore.SERVER_TIMESTAMP
+            })
+
         return reply
 
     except Exception as e:
         print("AI ERROR:", e)
         return "Something went wrong"
-#----------------meomary------------------#
-def extract_memory(text):
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Extract ONLY important personal user info.\n"
-                        "Return STRICTLY: key:value\n\n"
-                        "Examples:\n"
-                        "my name is irfan → name:irfan\n"
-                        "call me rahul → name:rahul\n"
-                        "my favourite colour is red → color:red\n"
-                        "i love blue → color:blue\n"
-                        "i am from india → place:india\n"
-                        "i live in chennai → place:chennai\n\n"
-                        "If user changes info, return new value.\n"
-                        "If nothing important, return: NONE"
-                        )
-                    
-                 },
-                {"role": "user", "content": text}
-            ]
-        )
-
-        result = response.choices[0].message.content.strip().lower()
-
-        print("MEMORY DEBUG:", result)  # 🔥
-
-        if result == "none":
-            return None
-
-        if ":" in result:
-            key, value = result.split(":", 1)
-            return key.strip(), value.strip()
-
-    except Exception as e:
-        print("MEMORY ERROR:", e)
-        return None
-
-def load_memory(user_id):
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT key, value FROM memory WHERE user_id=?",
-        (user_id,)
-    ).fetchall()
-    conn.close()
-
-    memory = {}
-    for r in rows:
-        memory[r["key"]] = r["value"]
-
-    return memory    
-
-
-def save_memory(user_id, key, value):
-    conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO memory (user_id, key, value) VALUES (?, ?, ?)",
-        (user_id, key, value)
-    )
-    conn.commit()
-    conn.close()
-
-def test_firebase():
-    db.collection("test").add({
-        "name": "Aura AI",
-        "status": "connected"
-    })
-    print("Data sent to Firebase")    
-
 
 # ---------------- ROUTES ---------------- #
-from flask import session   # ✅ make sure this import exists
+@app.route("/")
+def login():
+    return render_template("login.html")
+
 @app.route("/login_user", methods=["POST"])
 def login_user():
     email = request.form.get("email")
     password = request.form.get("password")
 
-    docs = db.collection("users").where("email", "==", email).stream()
+    users = db.collection("users").where("email", "==", email).stream()
 
-    user = None
-    for doc in docs:
-        data = doc.to_dict()
-        if data.get("password") == password:
-            user = data
-            user["id"] = doc.id
-            break
+    for user in users:
+        data = user.to_dict()
 
-    if user:
-        session["user_id"] = user["id"]
-        session["username"] = user["username"]
-        return redirect("/chat")
-    else:
-        return render_template("login.html", msg="Invalid email or password")
-    
-    
+        # 🔥 THIS IS THE MAIN CHECK
+        if data["password"] == password:
+            session["user_id"] = user.id
+            session["username"] = data["email"]
+
+            return redirect("/chat")
+
+    return render_template("login.html", msg="Invalid email or password")
+
+
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
     if request.method == "POST":
@@ -502,15 +449,16 @@ def signup():
         password = request.form.get("password")
 
         try:
+            # check existing user
             existing = db.collection("users").where("email", "==", email).stream()
-
             for doc in existing:
                 return render_template("signup.html", msg="Email already exists")
 
+            # create new user
             db.collection("users").add({
                 "username": username,
                 "email": email,
-                "password": password
+                "password": password   # (we'll secure later)
             })
 
             return redirect("/")
@@ -520,10 +468,6 @@ def signup():
             return render_template("signup.html", msg="Error creating account")
 
     return render_template("signup.html")
-
-@app.route("/")
-def login():
-    return render_template("login.html")
 
 
 @app.route("/chat")
@@ -536,29 +480,23 @@ def chat():
 
     chat_id = session.get("chat_id")
 
-    # ✅ IF CHAT EXISTS → REUSE
     if chat_id and chat_id in all_chats:
         current_chat_id = chat_id
-
     else:
-        # 🔥 CHECK DB FOR LAST CHAT
-        conn = get_db()
-        row = conn.execute(
-            "SELECT id FROM chats WHERE user_id=? ORDER BY ROWID DESC LIMIT 1",
-            (user_id,)
-        ).fetchone()
-        conn.close()
+        # Get last chat from Firebase
+        docs = db.collection("users").document(str(user_id))\
+                 .collection("chats").order_by("created_at", direction=firestore.Query.DESCENDING).limit(1).stream()
 
-        if row:
-            chat_id = row["id"]
-            current_chat_id = chat_id
-            session["chat_id"] = chat_id
+        last_chat = None
+        for doc in docs:
+            last_chat = doc.id
 
-            if chat_id not in all_chats:
-                all_chats[chat_id] = []
-
+        if last_chat:
+            current_chat_id = last_chat
+            session["chat_id"] = last_chat
+            if last_chat not in all_chats:
+                all_chats[last_chat] = []
         else:
-            # 🔥 FIRST TIME USER
             chat_id = create_new_chat(user_id)
             current_chat_id = chat_id
             session["chat_id"] = chat_id
@@ -568,171 +506,105 @@ def chat():
 @app.route("/api/chat", methods=["POST"])
 def chat_api():
     msg = request.form.get("message")
-
-    user_id = session.get("user_id")   # ✅ HERE ONLY
-
+    user_id = session.get("user_id")
     reply = process_message(msg, user_id)
 
-    # 🔥 HANDLE ACTION RESPONSE
     if isinstance(reply, dict) and "action" in reply:
         return jsonify(reply)
 
     return jsonify({"reply": reply})
 
-# ---------------- CHAT MANAGEMENT ---------------- #
-def create_new_chat(user_id=None):
-    global current_chat_id, chat_titles
-
-    chat_id = str(uuid.uuid4())
-    current_chat_id = chat_id
-    chat_titles[chat_id] = "New Chat"
-
-    if user_id:
-        db.collection("users")\
-          .document(str(user_id))\
-          .collection("chats")\
-          .document(chat_id)\
-          .set({
-              "title": "New Chat",
-              "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-          })
-
-    return chat_id
+@app.route("/new_chat", methods=["POST"])
+def new_chat():
+    user_id = session.get("user_id")
+    chat_id = create_new_chat(user_id)
+    session["chat_id"] = chat_id
+    return jsonify({"status": "new", "chat_id": chat_id})
 
 @app.route("/get_chats")
 def get_chats():
     user_id = session.get("user_id")
-
     if not user_id:
         return jsonify([])
 
-    docs = db.collection("users")\
-             .document(str(user_id))\
-             .collection("chats")\
-             .stream()
+    docs = db.collection("users").document(str(user_id))\
+             .collection("chats").stream()
 
     chats = []
-
     for doc in docs:
         data = doc.to_dict()
-
-        chats.append({
-            "id": doc.id,
-            "title": data.get("title", "New Chat")
-        })
+        chats.append({"id": doc.id, "title": data.get("title", "New Chat")})
 
     return jsonify(chats)
 
 @app.route("/load_chat/<chat_id>")
 def load_chat(chat_id):
-    user_id = session.get("user_id")
+    global current_chat_id, all_chats
 
+    user_id = session.get("user_id")
     if not user_id:
         return jsonify([])
 
-    docs = db.collection("users")\
-             .document(str(user_id))\
-             .collection("chats")\
-             .document(chat_id)\
-             .collection("messages")\
-             .order_by("time")\
-             .stream()
+    # Switch active chat
+    current_chat_id = chat_id
+    session["chat_id"] = chat_id
+
+    docs = db.collection("users").document(str(user_id))\
+             .collection("chats").document(chat_id)\
+             .collection("messages").order_by("time", direction=firestore.Query.ASCENDING).stream()
 
     chat = []
+    all_chats[chat_id] = []
 
     for doc in docs:
         data = doc.to_dict()
+        chat.append({"role": "user", "content": data.get("user_message", "")})
+        chat.append({"role": "assistant", "content": data.get("ai_reply", "")})
 
-        chat.append({
-            "role": "user",
-            "content": data.get("user_message", "")
-        })
-
-        chat.append({
-            "role": "assistant",
-            "content": data.get("ai_reply", "")
-        })
-
+    all_chats[chat_id] = chat  # restore context for AI
     return jsonify(chat)
-
-
-@app.route("/new_chat", methods=["POST"])
-def new_chat():
-    return jsonify({"status": "new"})
-
 
 @app.route("/rename_chat/<chat_id>", methods=["POST"])
 def rename_chat(chat_id):
-    global chat_titles
+    user_id = session.get("user_id")
+    if not user_id:
+        return jsonify({"status": "error"})
 
-    new_title = request.form.get("title")
-
+    new_title = request.form.get("title", "").strip()[:30]
     if not new_title:
         return jsonify({"status": "error"})
 
-    new_title = new_title.strip()[:30]
+    db.collection("users").document(str(user_id))\
+      .collection("chats").document(chat_id)\
+      .set({"title": new_title}, merge=True)
 
-    # 🔥 UPDATE DATABASE
-    conn = get_db()
-    conn.execute(
-        "UPDATE chats SET title=? WHERE id=?",
-        (new_title, chat_id)
-    )
-    conn.commit()
-    conn.close()
-
-    # 🔥 UPDATE MEMORY (UI cache)
     chat_titles[chat_id] = new_title
-
     return jsonify({"status": "ok"})
 
 @app.route("/delete_chat/<chat_id>", methods=["POST"])
 def delete_chat(chat_id):
     user_id = session.get("user_id")
-
     if not user_id:
         return jsonify({"status": "error"})
 
     try:
-        chat_ref = db.collection("users")\
-                     .document(str(user_id))\
-                     .collection("chats")\
-                     .document(chat_id)
+        chat_ref = db.collection("users").document(str(user_id))\
+                     .collection("chats").document(chat_id)
 
-        # delete messages first
         messages = chat_ref.collection("messages").stream()
         for msg in messages:
             msg.reference.delete()
 
-        # delete chat
         chat_ref.delete()
-
         return jsonify({"status": "deleted"})
 
     except Exception as e:
         print("DELETE ERROR:", e)
         return jsonify({"error": str(e)})
 
-
-def load_user_chats(user_id):
-    conn = get_db()
-    rows = conn.execute(
-        "SELECT message, response FROM messages WHERE user_id=?",
-        (user_id,)
-    ).fetchall()
-    conn.close()
-
-    chat = []
-    for r in rows:
-        chat.append({"role": "user", "content": r["message"]})
-        chat.append({"role": "assistant", "content": r["response"]})
-
-    return chat
-
 @app.route("/get_memory")
 def get_memory():
     user_id = session.get("user_id")
-
     if not user_id:
         return jsonify({})
 
@@ -742,40 +614,29 @@ def get_memory():
 @app.route("/delete_memory/<key>", methods=["POST"])
 def delete_memory(key):
     user_id = session.get("user_id")
-
     if not user_id:
         return jsonify({"status": "error"})
 
-    conn = get_db()
-    conn.execute(
-        "DELETE FROM memory WHERE user_id=? AND key=?",
-        (user_id, key)
-    )
-    conn.commit()
-    conn.close()
+    db.collection("users").document(str(user_id))\
+      .collection("memory").document(key).delete()
 
     return jsonify({"status": "ok"})
-
 
 @app.route("/update_memory", methods=["POST"])
 def update_memory():
     user_id = session.get("user_id")
-
     if not user_id:
         return jsonify({"status": "error"})
 
     key = request.form.get("key")
     value = request.form.get("value")
 
-    conn = get_db()
-    conn.execute(
-        "INSERT OR REPLACE INTO memory (user_id, key, value) VALUES (?, ?, ?)",
-        (user_id, key, value)
-    )
-    conn.commit()
-    conn.close()
+    db.collection("users").document(str(user_id))\
+      .collection("memory").document(key)\
+      .set({"value": value})
 
     return jsonify({"status": "ok"})
+
 # ---------------- RUN ---------------- #
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
