@@ -69,7 +69,7 @@ function sendMessage() {
         // 🔥 wait for Firebase title to save then refresh
         setTimeout(() => {
             loadChats();
-        }, 2000);
+        }, 3000);
 
     })
     .catch(err => {
