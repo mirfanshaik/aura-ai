@@ -212,7 +212,6 @@ def process_message(msg, user_id=None):
         all_chats[current_chat_id].append({"role": "assistant", "content": greeting_reply})
 
         if user_id:
-            # ✅ FIX - check Firebase directly
             doc = db.collection("users").document(str(user_id))\
                      .collection("chats").document(current_chat_id).get()
             existing_title = doc.to_dict().get("title", "New Chat") if doc.exists else "New Chat"
@@ -242,30 +241,35 @@ def process_message(msg, user_id=None):
     # -------- WEATHER --------
     if "weather" in msg_lower:
         import requests
-        from bs4 import BeautifulSoup
 
-        city = re.sub(r"(what is|wt is|how is|weather|now|in)", "", msg_lower).strip()
+        city = re.sub(r"(what is|wt is|how is|weather|now|in|the|tell me|about)", "", msg_lower).strip()
 
         if city == "":
             return "Tell me the city name boss 🌍"
 
         try:
-            url = f"https://www.google.com/search?q=weather+{city}"
+            url = f"https://wttr.in/{city}?format=j1"
             headers = {"User-Agent": "Mozilla/5.0"}
-            res = requests.get(url, headers=headers)
-            soup = BeautifulSoup(res.text, "html.parser")
+            res = requests.get(url, headers=headers, timeout=5)
+            data = res.json()
 
-            temp_tag = soup.find("span", {"id": "wob_tm"})
-            desc_tag = soup.find("span", {"id": "wob_dc"})
+            temp = data["current_condition"][0]["temp_C"]
+            feels = data["current_condition"][0]["FeelsLikeC"]
+            desc = data["current_condition"][0]["weatherDesc"][0]["value"]
+            humidity = data["current_condition"][0]["humidity"]
+            wind = data["current_condition"][0]["windspeedKmph"]
 
-            if temp_tag and desc_tag:
-                return f"🌦️ {city.title()}: {temp_tag.text}°C, {desc_tag.text}"
-            else:
-                return f"Sorry boss 😓 Weather not found for {city.title()}"
+            return (
+                f"🌦️ {city.title()} Weather:\n"
+                f"🌡️ Temp: {temp}°C (Feels {feels}°C)\n"
+                f"☁️ {desc}\n"
+                f"💧 Humidity: {humidity}%\n"
+                f"💨 Wind: {wind} km/h"
+            )
 
         except Exception as e:
             print("WEATHER ERROR:", e)
-            return "Unable to fetch weather right now boss 😓"
+            return f"Sorry boss 😓 Weather not found for {city.title()}"
 
     # -------- TRANSLATE --------
     msg = translate_text(msg, "en")
@@ -293,7 +297,8 @@ def process_message(msg, user_id=None):
 
     # ---------------- BASIC COMMANDS ---------------- #
     if "time" in msg_lower:
-        return datetime.datetime.now().strftime("%H:%M:%S")
+        ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+        return datetime.datetime.now(ist).strftime("%H:%M:%S")
 
     if "date" in msg_lower:
         return str(datetime.date.today())
@@ -379,7 +384,6 @@ def process_message(msg, user_id=None):
 
         # ---------------- AUTO TITLE ---------------- #
         if user_id:
-            # ✅ FIX - check Firebase directly
             doc = db.collection("users").document(str(user_id))\
                      .collection("chats").document(current_chat_id).get()
             existing_title = doc.to_dict().get("title", "New Chat") if doc.exists else "New Chat"

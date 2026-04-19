@@ -237,23 +237,22 @@ function voice() {
 
     showWave();
 
-    // ❌ REMOVE speakText here
+    // ✅ speak first, then start mic after delay
     speakText("I'm listening");
 
-    console.log("🎤 Listening...");
-
-    rec.start();   // ✅ start immediately
+    setTimeout(() => {
+        console.log("🎤 Listening...");
+        rec.start();  // ✅ start AFTER speaking finishes
+    }, 1500);  // wait 1.5 seconds
 
     rec.onresult = function(e) {
         let msg = e.results[0][0].transcript.toLowerCase();
         console.log("You said:", msg);
-
         sendVoiceMessage(msg);
     };
 
     rec.onerror = function(e) {
         console.error("Mic error:", e.error);
-
         if (e.error === "no-speech") {
             alert("Speak something boss 🎤");
         }
