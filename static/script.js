@@ -63,6 +63,9 @@ function sendMessage() {
         chatBox.appendChild(botDiv);
 
         streamText(botDiv, reply);
+        // ✅ force scroll to bottom
+        let chatBox = document.getElementById("chat-box");
+        chatBox.scrollTop = chatBox.scrollHeight;
 
         smoothScrollSmart();
 
@@ -243,7 +246,7 @@ function voice() {
     setTimeout(() => {
         console.log("🎤 Listening...");
         rec.start();  // ✅ start AFTER speaking finishes
-    }, 1500);  // wait 1.5 seconds
+    }, 2000);  // wait 2 seconds
 
     rec.onresult = function(e) {
         let msg = e.results[0][0].transcript.toLowerCase();
