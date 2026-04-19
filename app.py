@@ -64,50 +64,6 @@ def translate_text(text, dest):
     except:
         return text
 
-# ---------------- READERS ---------------- #
-def read_pdf(path):
-    text = ""
-    with open(path, "rb") as f:
-        reader = PyPDF2.PdfReader(f)
-        for page in reader.pages:
-            text += page.extract_text() or ""
-    return text
-
-def read_image(path):
-    img = Image.open(path).convert("L")
-    img = img.point(lambda x: 0 if x < 140 else 255)
-    return pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-
-def read_scanned_pdf(path):
-    images = convert_from_path(path)
-    text = ""
-    for img in images:
-        img = img.convert("L")
-        text += pytesseract.image_to_string(img, lang='eng', config='--oem 3 --psm 6')
-    return text
-
-# ---------------- IMAGE DESCRIPTION ---------------- #
-def describe_image(path):
-    try:
-        with open(path, "rb") as img_file:
-            base64_image = base64.b64encode(img_file.read()).decode("utf-8")
-
-        response = client.chat.completions.create(
-            model="llama-3.2-11b-vision-preview",
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": "Describe this image clearly in 5 points."},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
-                ]
-            }]
-        )
-        return response.choices[0].message.content
-
-    except Exception as e:
-        print("VISION ERROR:", e)
-        return "Unable to analyze image."
-
 # ---------------- CLEAN + FORMAT ---------------- #
 def clean_text(text):
     return text.replace("**", "")
