@@ -135,15 +135,24 @@ def generate_title(chat_messages):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "Generate a very short chat title (max 5 words)."},
+                {"role": "system", "content": "Generate a very short chat title (max 5 words). No markdown, no asterisks, no symbols. Plain text only."},
                 {"role": "user", "content": first_msg}
             ]
         )
-        return response.choices[0].message.content.strip()[:30]
+
+        title = response.choices[0].message.content.strip()
+
+        # ✅ clean asterisks and markdown
+        title = title.replace("**", "")
+        title = title.replace("*", "")
+        title = title.replace("#", "")
+        title = title.replace("`", "")
+        title = title.strip()
+
+        return title[:30]
 
     except:
         return first_msg[:20] if first_msg else "New Chat"
-
 # ---------------- MEMORY (FIREBASE) ---------------- #
 def extract_memory(text):
     try:
