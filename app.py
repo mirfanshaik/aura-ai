@@ -430,14 +430,15 @@ def login_user():
     for user in users:
         data = user.to_dict()
 
-        stored_password = str(data.get("password", "")).strip()
+        stored_password = str(data.get("password", ""))
 
-        if stored_password == password:
+        if check_password_hash(stored_password, password):
             session["user_id"] = user.id
             session["username"] = data["email"]
             return redirect("/chat")
 
     return render_template("login.html", msg="Invalid email or password")
+
 
 @app.route("/signup", methods=["GET", "POST"])
 def signup():
@@ -447,16 +448,16 @@ def signup():
         password = request.form.get("password")
 
         try:
-            # check existing user
             existing = db.collection("users").where("email", "==", email).stream()
             for doc in existing:
                 return render_template("signup.html", msg="Email already exists")
 
-            # create new user
+            hashed_password = generate_password_hash(password)  # ← ADD THIS LINE
+
             db.collection("users").add({
                 "username": username,
-                "email": email.strip().lower(),  # ✅ lowercase
-                "password": password.strip()     # ✅ trim spaces
+                "email": email.strip().lower(),
+                "password": hashed_password
             })
 
             return redirect("/")
@@ -466,7 +467,6 @@ def signup():
             return render_template("signup.html", msg="Error creating account")
 
     return render_template("signup.html")
-
 
 @app.route("/chat")
 def chat():
