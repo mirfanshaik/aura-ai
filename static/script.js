@@ -118,8 +118,6 @@ function startVoiceMode() {
 
     isVoiceMode = true;
     speakText("Aura voice mode activated");
-
-    setTimeout(() => {}, 1500);
 }
 
 function stopVoiceMode() {
@@ -173,15 +171,15 @@ function voiceLoop() {
         processJarvis(msg);
     };
 
-    rec.onerror = function(e) {
-        if (e.error === "aborted") {
-            ignoreAbort = true;
-            return;
-        }
-        if (isVoiceMode) {
-            setTimeout(() => voiceLoop(), 500);
-        }
-    };
+   rec.onerror = function(e) {
+     if (e.error === "aborted") { ignoreAbort = true; return; }
+     if (e.error === "no-speech" && isVoiceMode) {
+        setTimeout(() => voiceLoop(), 500);
+    } else {
+        console.log("Mic error:", e.error);
+        isVoiceMode = false;
+    }
+};
 
     rec.onend = function() {
         if (ignoreAbort) {
@@ -240,12 +238,15 @@ function voice() {
 
     showWave();
 
-    speakText("I'm listening");
-
-    setTimeout(() => {
-        console.log("🎤 Listening...");
-        rec.start();
-    }, 2000);
+    speechSynthesis.cancel(); // stop any ongoing speech
+    let speech = new SpeechSynthesisUtterance("Yes?");
+    speech.onend = function() {
+        setTimeout(() => {
+            console.log("🎤 Listening...");
+            rec.start(); // ✅ starts only after speech finishes
+        }, 300);
+    };
+    speechSynthesis.speak(speech);
 
     rec.onresult = function(e) {
         let msg = e.results[0][0].transcript.toLowerCase();
@@ -292,6 +293,15 @@ function sendVoiceMessage(msg) {
         let typing = document.getElementById("typing");
         if (typing) typing.remove();
 
+        // ✅ handle open/search/play commands
+        if (data.action === "open_url") {
+            window.open(data.url, "_blank");
+            if (data.reply) {
+                speakText(data.reply);
+            }
+            return;
+        }
+
         let reply = data.reply;
 
         let botDiv = document.createElement("div");
@@ -304,7 +314,6 @@ function sendVoiceMessage(msg) {
 
         chatBox.scrollTop = chatBox.scrollHeight;
     });
-}
 
 // ================= ASK MORE =================
 function askMore() {
@@ -545,13 +554,17 @@ function streamText(element, text) {
 }
 
 function readText(btn) {
-    let text = btn.parentElement.parentElement.innerText;
-    speakText(text);
+    let msgDiv = btn.parentElement.parentElement;
+    let clone = msgDiv.cloneNode(true);
+    clone.querySelector(".msg-actions")?.remove();
+    speakText(clone.innerText.trim());
 }
 
 function explainText(btn) {
-    let text = btn.parentElement.parentElement.innerText;
-    sendVoiceMessage("Explain this in detail: " + text);
+    let msgDiv = btn.parentElement.parentElement;
+    let clone = msgDiv.cloneNode(true);
+    clone.querySelector(".msg-actions")?.remove();
+    sendVoiceMessage("Explain this in detail: " + clone.innerText.trim());
 }
 
 // ================= RENAME =================
@@ -647,6 +660,8 @@ window.onload = function () {
     // 🔥 HIDE WAVE ON START
     let w = document.getElementById("wave");
     if (w) w.style.display = "none";
+
+    loadMemory(); // ✅ load memory on startup
 
     fetch("/get_chats")
     .then(res => res.json())

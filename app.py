@@ -451,7 +451,7 @@ def signup():
             existing = db.collection("users").where("email", "==", email).stream()
             for doc in existing:
                 return render_template("signup.html", msg="Email already exists")
-
+     
             hashed_password = generate_password_hash(password)  # ← ADD THIS LINE
 
             db.collection("users").add({
@@ -505,7 +505,10 @@ def chat():
 def chat_api():
     global current_chat_id
 
-    msg = request.form.get("message")
+    msg = request.form.get("message", "").strip()
+    if not msg:
+        return jsonify({"reply": "Say something boss!"})  # ✅ 8 spaces indent
+    
     user_id = session.get("user_id")
 
     # ✅ get chat_id directly from frontend
@@ -522,7 +525,6 @@ def chat_api():
         return jsonify(reply)
 
     return jsonify({"reply": reply})
-
 
 @app.route("/new_chat", methods=["POST"])
 def new_chat():
