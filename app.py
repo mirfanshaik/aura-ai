@@ -189,7 +189,8 @@ def create_new_chat(user_id=None):
 
     return chat_id
 
-# ---------------- AI ENGINE ---------------- #
+
+
 # ---------------- AI ENGINE ---------------- #
 def process_message(msg, user_id=None):
     global all_chats, current_chat_id, chat_titles
@@ -216,18 +217,22 @@ def process_message(msg, user_id=None):
         all_chats[current_chat_id].append({"role": "assistant", "content": greeting_reply})
 
         if user_id:
-            if chat_titles.get(current_chat_id) == "New Chat":
+            # ✅ FIX - check Firebase directly
+            doc = db.collection("users").document(str(user_id))\
+                     .collection("chats").document(current_chat_id).get()
+            existing_title = doc.to_dict().get("title", "New Chat") if doc.exists else "New Chat"
+
+            if existing_title == "New Chat":
                 new_title = generate_title(all_chats[current_chat_id])
-                chat_titles[current_chat_id] = new_title
-                db.collection("users").document(str(user_id))\
-                  .collection("chats").document(current_chat_id)\
-                  .set({"title": new_title}, merge=True)
+                new_title = new_title.replace("**","").replace("*","").strip()
+            else:
+                new_title = existing_title
 
             chat_ref = db.collection("users").document(str(user_id))\
                          .collection("chats").document(current_chat_id)
 
             chat_ref.set({
-                "title": chat_titles.get(current_chat_id, "New Chat"),
+                "title": new_title,
                 "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
 
@@ -378,14 +383,17 @@ def process_message(msg, user_id=None):
         all_chats[current_chat_id].append({"role": "assistant", "content": reply})
 
         # ---------------- AUTO TITLE ---------------- #
-        if chat_titles.get(current_chat_id) == "New Chat":
-            new_title = generate_title(all_chats[current_chat_id])
-            chat_titles[current_chat_id] = new_title
+        if user_id:
+            # ✅ FIX - check Firebase directly
+            doc = db.collection("users").document(str(user_id))\
+                     .collection("chats").document(current_chat_id).get()
+            existing_title = doc.to_dict().get("title", "New Chat") if doc.exists else "New Chat"
 
-            if user_id:
-                db.collection("users").document(str(user_id))\
-                  .collection("chats").document(current_chat_id)\
-                  .set({"title": new_title}, merge=True)
+            if existing_title == "New Chat":
+                new_title = generate_title(all_chats[current_chat_id])
+                new_title = new_title.replace("**","").replace("*","").strip()
+            else:
+                new_title = existing_title
 
         # ---------------- SAVE TO FIREBASE ---------------- #
         if user_id:
@@ -393,7 +401,7 @@ def process_message(msg, user_id=None):
                          .collection("chats").document(current_chat_id)
 
             chat_ref.set({
-                "title": chat_titles.get(current_chat_id, "New Chat"),
+                "title": new_title,
                 "created_at": firestore.SERVER_TIMESTAMP
             }, merge=True)
 
