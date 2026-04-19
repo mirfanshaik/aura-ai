@@ -618,18 +618,25 @@ function deleteChat(chatId) {
 function confirmDelete() {
     if (!deleteId) return;
 
-    fetch(`/delete_chat/${deleteId}`, { method: "POST" })
+    let chatToDelete = deleteId;  // ✅ save before reset
+
+    fetch(`/delete_chat/${chatToDelete}`, { method: "POST" })
     .then(res => res.json())
     .then(data => {
         closeDelete();
-        document.getElementById("chat-box").innerHTML = "";
 
-        // ✅ auto create new chat after delete
+        // ✅ remove from all_chats memory
+        if (chatToDelete === current_chat_id) {
+            current_chat_id = null;
+            document.getElementById("chat-box").innerHTML = "";
+        }
+
+        // ✅ create new chat then refresh sidebar
         fetch("/new_chat", { method: "POST" })
         .then(res => res.json())
-        .then(data => {
-            current_chat_id = data.chat_id;
-            loadChats();
+        .then(newData => {
+            current_chat_id = newData.chat_id;
+            loadChats();  // ✅ sidebar refreshes with deleted one gone
         });
     })
     .catch(err => console.error("DELETE ERROR:", err));
