@@ -43,7 +43,7 @@ function sendMessage() {
     .then(res => res.json())
     .then(data => {
 
-        // ❌ REMOVE TYPING
+        // ✅ REMOVE TYPING
         let typing = document.getElementById("typing");
         if (typing) typing.remove();
 
@@ -54,7 +54,6 @@ function sendMessage() {
             }
             return;
         }
-
 
         let reply = data.reply;
 
@@ -67,8 +66,10 @@ function sendMessage() {
 
         smoothScrollSmart();
 
-        // 🔥 VERY IMPORTANT (AUTO TITLE UPDATE)
-        loadChats();
+        // 🔥 wait for Firebase title to save then refresh
+        setTimeout(() => {
+            loadChats();
+        }, 2000);
 
     })
     .catch(err => {
