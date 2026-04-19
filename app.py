@@ -190,6 +190,7 @@ def create_new_chat(user_id=None):
     return chat_id
 
 # ---------------- AI ENGINE ---------------- #
+# ---------------- AI ENGINE ---------------- #
 def process_message(msg, user_id=None):
     global all_chats, current_chat_id, chat_titles
 
@@ -201,41 +202,43 @@ def process_message(msg, user_id=None):
 
     msg_lower = msg.lower().strip()
 
-    # -------- GREETING --------#
-    if msg_lower in ["hi", "hello", "hey", "hllo", "helo"]:
-        responses = [
-        "Hello boss 😎",
-        "Hi boss, ready to assist 🔥",
-        "Greetings boss 🤖",
-        "Hey boss, what can I do for you?"
-    ]
-    reply = random.choice(responses)
+    # -------- GREETING --------
+    if msg_lower in ["hi", "hello", "hey", "hllo", "helo", "hlo"]:
+        greeting_responses = [
+            "Hello boss 😎",
+            "Hi boss, ready to assist 🔥",
+            "Greetings boss 🤖",
+            "Hey boss, what can I do for you?"
+        ]
+        greeting_reply = random.choice(greeting_responses)
 
-    # ✅ save greeting to Firebase too
-    all_chats[current_chat_id].append({"role": "user", "content": original_msg})
-    all_chats[current_chat_id].append({"role": "assistant", "content": reply})
+        all_chats[current_chat_id].append({"role": "user", "content": original_msg})
+        all_chats[current_chat_id].append({"role": "assistant", "content": greeting_reply})
 
-    if user_id:
-        if chat_titles.get(current_chat_id) == "New Chat":
-            new_title = generate_title(all_chats[current_chat_id])
-            chat_titles[current_chat_id] = new_title
-            db.collection("users").document(str(user_id))\
-              .collection("chats").document(current_chat_id)\
-              .set({"title": new_title}, merge=True)
+        if user_id:
+            if chat_titles.get(current_chat_id) == "New Chat":
+                new_title = generate_title(all_chats[current_chat_id])
+                chat_titles[current_chat_id] = new_title
+                db.collection("users").document(str(user_id))\
+                  .collection("chats").document(current_chat_id)\
+                  .set({"title": new_title}, merge=True)
 
-        chat_ref = db.collection("users").document(str(user_id))\
-                     .collection("chats").document(current_chat_id)
-        chat_ref.set({
-            "title": chat_titles.get(current_chat_id, "New Chat"),
-            "created_at": firestore.SERVER_TIMESTAMP
-        }, merge=True)
-        chat_ref.collection("messages").add({
-            "user_message": original_msg,
-            "ai_reply": reply,
-            "time": firestore.SERVER_TIMESTAMP
-        })
+            chat_ref = db.collection("users").document(str(user_id))\
+                         .collection("chats").document(current_chat_id)
 
-    return reply
+            chat_ref.set({
+                "title": chat_titles.get(current_chat_id, "New Chat"),
+                "created_at": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+
+            chat_ref.collection("messages").add({
+                "user_message": original_msg,
+                "ai_reply": greeting_reply,
+                "time": firestore.SERVER_TIMESTAMP
+            })
+
+        return greeting_reply
+
     # -------- WEATHER --------
     if "weather" in msg_lower:
         import requests
@@ -405,7 +408,6 @@ def process_message(msg, user_id=None):
     except Exception as e:
         print("AI ERROR:", e)
         return "Something went wrong"
-
 # ---------------- ROUTES ---------------- #
 @app.route("/")
 def login():
