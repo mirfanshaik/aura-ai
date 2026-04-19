@@ -63,12 +63,12 @@ function sendMessage() {
         chatBox.appendChild(botDiv);
 
         streamText(botDiv, reply);
-        // ✅ force scroll to bottom
-        let chatBox = document.getElementById("chat-box");
+
+       // ✅ scroll after stream finishes
+       setTimeout(() => {
         chatBox.scrollTop = chatBox.scrollHeight;
-
         smoothScrollSmart();
-
+       }, 100);
         // 🔥 wait for Firebase title to save then refresh
         setTimeout(() => {
             loadChats();
@@ -531,18 +531,8 @@ function loadChat(chatId) {
 // ================= INIT =================
 function smoothScrollSmart() {
     let box = document.getElementById("chat-box");
-
-    let isNearBottom =
-        box.scrollHeight - box.scrollTop - box.clientHeight < 100;
-
-    if (isNearBottom) {
-        box.scrollTo({
-            top: box.scrollHeight,
-            behavior: "smooth"
-        });
-    }
+    box.scrollTop = box.scrollHeight;
 }
-
 function streamText(element, text) {
     let words = text.split(" ");
     let i = 0;
